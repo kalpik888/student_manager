@@ -1,6 +1,15 @@
 import sqlite3
+from fastapi import FastAPI,HTTPException
+from pydantic import BaseModel
 
-conn = sqlite3.connect("students.db")
+app = FastAPI(title="student management")
+
+def get_db():
+    conn = sqlite3.connect("students.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+conn = get_db()
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -13,87 +22,87 @@ create table if not exists students (
 """)
 
 conn.commit()
+conn.close()
 
+class Student(BaseModel):
+    name : str
+    age: int
+    course: str
 
-def add():
-    name= input("enter name: ")
-    age= input("enter age: ")
-    course= input("enter course: ")
+class UpdateStudent(BaseModel):
+    name: str | None = None
+    age: int | None = None
+    course: str | None=None
+
+@app.post("/students")
+def add(student:Student):
+    conn=get_db()
+    cursor = conn.cursor()
     cursor.execute("insert into students (name,age,course) values (?,?,?)",
-                   (name,age,course))
+                   (student.name,student.age,student.course))
     conn.commit()
-    print("students added successfully!!!")
+    student_id=cursor.lastrowid
+    conn.close()
+    return {"message": "Student added successfully!", "id": student_id}
 
-
+@app.get("/students")
 def view():
+    conn=get_db()
+    cursor=conn.cursor()
     cursor.execute("select * from students")
     rows = cursor.fetchall()
-    print("\n---Student Records---")
-    for row in rows:
-        print(f"ID: {row[0]}, Name: {row[1]}, Age: {row[2]}, Course: {row[3]}")
-    if not rows:
-        print("no records found")
+    conn.close()
+    return [dict[rows] for row in rows]
 
-def search():
-    key= input("enter the keyword to search: ")
+@app.get("/students/search")
+def search(key:str):
+    conn=get_db()
+    cursor=conn.cursor()
     cursor.execute("select * from students where name like ? or course like ?",
                    (f"%{key}",f"%{key}"))
     rows = cursor.fetchall()
-    if rows:
-        for row in rows:
-            print(f"ID: {row[0]}, Name: {row[1]}, Age: {row[2]}, Course: {row[3]}")
-    else:
-        print("no matching results found")
+    conn.close()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching results found")
+    return [dict[rows] for row in rows]
 
-def update():
-    student_id= input("enter student id: ")
-    name = input("enter the new name: ")
-    age= input("enter the new age: ")
-    course = input("enter the new course: ")
-    cursor.execute("update students set name=?,age=?,course=? where id=?",
-                   (name,age,course,student_id))
+@app.put("studets/{student_id}")
+def update(student_id : int,student : UpdateStudent):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Only update provided fields
+    update_fields = []
+    params = []
+    if student.name:
+        update_fields.append("name=?")
+        params.append(student.name)
+    if student.age:
+        update_fields.append("age=?")
+        params.append(student.age)
+    if student.course:
+        update_fields.append("course=?")
+        params.append(student.course)
+    
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    params.append(student_id)
+    query = f"UPDATE students SET {', '.join(update_fields)} WHERE id=?"
+    cursor.execute(query, tuple(params))
     conn.commit()
-    if cursor.rowcount >0:
-        print("student data updated!!!")
-    else:
-        print("student not found")
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Student not found")
+    conn.close()
+    return {"message": "Student updated successfully"}
 
-def delete():
-    student_id=input("enter id to delete: ")
+@app.delete("students/{student_id}")
+def delete(student_id: int):
+    conn=get_db()
+    cursor=conn.cursor()
     cursor.execute("delete from students where id=?",(student_id))
     conn.commit()
-    if cursor.rowcount >0:
-        print("student deleted")
-    else:
-        print("student not found")
-
-
-while True:
-    print("\n===== Student Management System =====")
-    print("1. Add Student")
-    print("2. View Students")
-    print("3. Search Student")
-    print("4. Update Student")
-    print("5. Delete Student")
-    print("6. Exit")
-
-    choice = input("Enter your choice: ")
-
-    if choice == "1":
-        add()
-    elif choice == "2":
-        view()
-    elif choice == "3":
-        search()
-    elif choice == "4":
-        update()
-    elif choice == "5":
-        delete()
-    elif choice == "6":
-        print("Exiting... Goodbye!")
-        break
-    else:
-        print("❌ Invalid choice, please try again.")
-
-# Close the database connection
-conn.close()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Student not found")
+    conn.close()
+    return {"message": "Student deleted successfully"}
