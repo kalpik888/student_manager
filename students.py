@@ -52,7 +52,7 @@ def view():
     cursor.execute("select * from students")
     rows = cursor.fetchall()
     conn.close()
-    return [dict[rows] for row in rows]
+    return [dict(row) for row in rows]
 
 @app.get("/students/search")
 def search(key:str):
@@ -64,9 +64,9 @@ def search(key:str):
     conn.close()
     if not rows:
         raise HTTPException(status_code=404, detail="No matching results found")
-    return [dict[rows] for row in rows]
+    return [dict(row) for row in rows]
 
-@app.put("studets/{student_id}")
+@app.put("/students/{student_id}")
 def update(student_id : int,student : UpdateStudent):
     conn = get_db()
     cursor = conn.cursor()
@@ -96,11 +96,11 @@ def update(student_id : int,student : UpdateStudent):
     conn.close()
     return {"message": "Student updated successfully"}
 
-@app.delete("students/{student_id}")
+@app.delete("/students/{student_id}")
 def delete(student_id: int):
     conn=get_db()
     cursor=conn.cursor()
-    cursor.execute("delete from students where id=?",(student_id))
+    cursor.execute("delete from students where id=?",(student_id,))
     conn.commit()
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Student not found")
